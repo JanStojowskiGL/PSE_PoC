@@ -14,5 +14,9 @@ FetchContent_Declare(fmt
 )
 FetchContent_MakeAvailable(fmt)
 
-add_executable(video_demo main.cpp yolo_detection.cpp line_detection.cpp app.cpp)
+add_executable(video_demo 
+src/main.cpp
+src/yolo_detection.cpp
+src/line_detection.cpp
+src/app.cpp)
 target_link_libraries(video_demo ${OpenCV_LIBS} fmt::fmt)
