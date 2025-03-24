@@ -2,9 +2,13 @@
 #include <filesystem>
 #include <fmt/base.h>
 #include <iostream>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
+#include <opencv2/core/utility.hpp>
+#include <opencv2/dnn/dnn.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include <vector>
 
 // Based on: https://docs.opencv.org/4.x/da/d9d/tutorial_dnn_yolo.html
 
@@ -21,9 +25,8 @@ YoloDetection::YoloDetection() {
     std::exit(2);
   }
   net = cv::dnn::readNet(model_path);
-  // net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
-  // net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA_FP16);
-
+  net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+  net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA_FP16);
   // const auto supported_backends = cv::dnn::getAvailableBackends();
   // std::cout << "Backend count: " << supported_backends.size() << '\n';
 }
@@ -36,7 +39,8 @@ static void drawBoundingBox(cv::Mat &image, int classId, float confidence,
   cv::rectangle(image, rect, cv::Scalar(0, 255, 0), 2);
 
   // Create label text "<class>: <confidence>"
-  std::string label = std::string{CLASSES[classId]} + ": " + std::to_string(confidence);
+  std::string label =
+      std::string{CLASSES[classId]} + ": " + std::to_string(confidence);
 
   // Display the label at the top of the bounding box
   int baseLine = 0;
@@ -47,18 +51,47 @@ static void drawBoundingBox(cv::Mat &image, int classId, float confidence,
               cv::Scalar(0, 255, 0), 1);
 }
 
+cv::Mat create_blob(const cv::Mat &frame) {
+  float paddingValue = 0.0;
+  bool swapRB = false;
+  int inpWidth = 640;
+  int inpHeight = 640;
+  cv::Scalar scale = 1.0f / 255.0f;
+  cv::Scalar mean = 0.0;
+  cv::dnn::ImagePaddingMode paddingMode =
+      cv::dnn::ImagePaddingMode::DNN_PMODE_LETTERBOX;
+
+  cv::Size size(inpWidth, inpHeight);
+  cv::dnn::Image2BlobParams imgParams(scale, size, mean, swapRB, CV_32F,
+                                      cv::dnn::DNN_LAYOUT_NCHW, paddingMode,
+                                      paddingValue);
+
+  // rescale boxes back to original image
+  cv::dnn::Image2BlobParams paramNet;
+  paramNet.scalefactor = scale;
+  paramNet.size = size;
+  paramNet.mean = mean;
+  paramNet.swapRB = swapRB;
+  paramNet.paddingmode = paddingMode;
+
+  cv::Mat inp = cv::dnn::blobFromImageWithParams(frame, imgParams);
+  std::cout << "Inp shape: " << inp.size << '\n';
+  return inp;
+}
+
 std::vector<Detection> YoloDetection::predict(const cv::Mat &frame) {
-  cv::Mat image = frame.clone();
-  int height = image.rows;
-  int width = image.cols;
+  int height = frame.rows;
+  int width = frame.cols;
 
   constexpr int input_size{640}; // Needs to match onnx
 
   // Prepare a square image for inference
-  // FIXME: this way of cropping image is stuid, can be optimized
   int length = std::max(height, width);
-  cv::Mat square = cv::Mat::zeros(length, length, CV_8UC3);
-  image.copyTo(square(cv::Rect(0, 0, width, height)));
+
+  cv::Mat square = cv::Mat::zeros(input_size, input_size, CV_8UC3);
+  int small_height = height * input_size / width;
+  auto small_roi = square(cv::Rect(0, 0, input_size, small_height));
+  cv::resize(frame, small_roi, small_roi.size());
 
   float scaleFactor = static_cast<float>(length) / input_size;
 
@@ -139,7 +172,6 @@ std::vector<Detection> YoloDetection::predict(const cv::Mat &frame) {
     box.y *= scaleFactor;
     box.width *= scaleFactor;
     box.height *= scaleFactor;
-
     ret.push_back({box, confidence});
 
     // drawBoundingBox(annotated, classId, confidence, box);
@@ -148,3 +180,5 @@ std::vector<Detection> YoloDetection::predict(const cv::Mat &frame) {
 
   return ret;
 }
+
+cv::Point2f Detection::center() const { return (box.tl() + box.br()) / 2; }

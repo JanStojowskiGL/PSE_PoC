@@ -1,11 +1,14 @@
 #include "app.h"
-#include "line_detection.h"
-#include "yolo_detection.h"
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <opencv2/core/utility.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
+#include "async_queue.h"
+#include "gui_app.h"
+#include "imgui.h"
+#include "prediction.h"
 
 int main(int argc, char**argv){
     if (argc < 2){
@@ -14,25 +17,19 @@ int main(int argc, char**argv){
     }
     
     const std::filesystem::path video_path = argv[1];
-    cv::VideoCapture cap{video_path};
-    cv::Mat frame;
-    App app{};
-    while (true) {
-        const auto tick = std::chrono::high_resolution_clock::now();
-        cap.read(frame);
-        if (frame.empty()){
-            break;
-        }
-        app.predict(frame);
 
-        const auto tock = std::chrono::high_resolution_clock::now();
-        const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(tock - tick);
-        std::cout << "Took: " << duration.count() << "ms\n";
+    AsyncQueue<Prediction> prediction_queue(2);
 
-        const auto key = cv::waitKey(1);
-        if (key == 'q' || key == 27) { // 27 - ESC
-            break;
-        }
+    App app{video_path};
+    app.prediction_queue = &prediction_queue;
+    app.start_worker();
+
+    GuiApp gui_app{};
+    gui_app.prediction_queue = &prediction_queue;
+
+    while(!gui_app.should_close())
+    {
+        gui_app.draw_frame();
     }
     return 0;
 }
