@@ -34,8 +34,6 @@ struct LineDetector {
   std::vector<Line> detect_lines(const cv::Mat &frame);
   std::vector<Line> detect_lines2(const cv::Mat &frame);
 
-  std::vector<Line> detect_lines3(const cv::Mat &frame);
-  std::vector<Line> detect_lines4(const cv::Mat &frame);
   std::vector<Line> detect_lines_hugh(const cv::Mat &frame);
 
   std::vector<Line> filter_lines(const std::vector<Line> &input);
